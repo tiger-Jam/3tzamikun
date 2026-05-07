@@ -1,0 +1,73 @@
+---
+layout: layout.njk
+pagination:
+  data: charts.levelPages
+  size: 1
+  alias: lp
+permalink: "/score/{{ lp.tableId }}/lv{{ lp.levelSlug }}/"
+eleventyComputed:
+  title: "{{ lp.tableSymbol }}{{ lp.level }} - {{ lp.tableLabel }}"
+---
+
+{% set activeTable = lp.tableId %}
+{% set activeLevel = lp.level %}
+
+<h2>■ {{ lp.tableLabel }} {{ lp.tableSymbol }}{{ lp.level }}</h2>
+
+{% include "score-filter.njk" %}
+
+<p>
+譜面数: {{ lp.entries.length }} / 登録済: {{ lp.entries | countWhere("registered") }}<br>
+列クリックでソート（↑/↓）。グレー行は譜面SVG未登録。
+</p>
+
+<div class="scroll-x">
+<table class="list sortable" id="charts" cellspacing="0" cellpadding="4" border="1">
+<thead>
+<tr>
+<th data-sort="level" rowspan="2">Lv</th>
+<th colspan="2">譜面</th>
+<th data-sort="title" rowspan="2">曲名</th>
+<th data-sort="artist" rowspan="2">アーティスト</th>
+<th data-sort="notes" rowspan="2">Notes</th>
+<th data-sort="bpm" rowspan="2">BPM</th>
+<th data-sort="duration" rowspan="2">時間</th>
+<th rowspan="2">動画</th>
+<th rowspan="2">DL</th>
+</tr>
+<tr>
+<th>1P</th>
+<th>2P</th>
+</tr>
+</thead>
+<tbody>
+{% for e in lp.entries %}
+<tr class="{% if not e.registered %}unreg{% endif %}" data-md5="{{ e.md5 }}">
+<td align="center" data-v="{{ e.level }}">{{ e.tableSymbol }}{{ e.level }}</td>
+<td align="center">
+{% if e.registered %}<a href="/score/{{ lp.tableId }}/c/{{ e.key }}/?s=1p">1P</a>{% else %}<span class="muted">-</span>{% endif %}
+</td>
+<td align="center">
+{% if e.registered %}<a href="/score/{{ lp.tableId }}/c/{{ e.key }}/?s=2p">2P</a>{% else %}<span class="muted">-</span>{% endif %}
+</td>
+<td data-v="{{ e.title }}">
+<a href="/score/{{ lp.tableId }}/c/{{ e.key }}/">{{ e.title }}</a>
+</td>
+<td data-v="{{ e.artist }}">{{ e.artist }}</td>
+<td align="right" data-v="{{ e.notes or 0 }}">{% if e.notes %}{{ e.notes }}{% else %}-{% endif %}</td>
+<td align="right" data-v="{{ e.bpm or 0 }}">{% if e.bpm %}{{ e.bpm }}{% else %}-{% endif %}</td>
+<td align="right" data-v="{{ e.durationSec or 0 }}">{% if e.durationSec %}{{ (e.durationSec / 60) | int }}:{% if e.durationSec % 60 < 10 %}0{% endif %}{{ e.durationSec % 60 }}{% else %}-{% endif %}</td>
+<td align="center">
+{% if e.videoUrl %}{% set yt = e.videoUrl | ytId %}<a href="{{ e.videoUrl }}" target="_blank" rel="noopener noreferrer">{% if yt %}YT{% else %}▶{% endif %}</a>{% else %}<span class="muted">-</span>{% endif %}
+</td>
+<td align="center">
+{% if e.url %}<a href="{{ e.url }}" target="_blank" rel="noopener noreferrer">本体</a>{% endif %}
+{% if e.urlDiff %} / <a href="{{ e.urlDiff }}" target="_blank" rel="noopener noreferrer">差分</a>{% endif %}
+</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+
+<script src="/score/sort.js" defer></script>

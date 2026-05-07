@@ -1,0 +1,37 @@
+---
+layout: layout.njk
+title: TOP
+---
+
+<h2>■ TOOLS</h2>
+<table class="list" cellspacing="0" cellpadding="4" border="1">
+<tr>
+<th>名称</th>
+<th>状態</th>
+</tr>
+{% for t in collections.tools %}
+<tr>
+<td><a href="{{ t.data.link or t.url }}">{{ t.data.title }}</a></td>
+<td>{{ t.data.status or "-" }}</td>
+</tr>
+{% else %}
+<tr><td colspan="2">(準備中)</td></tr>
+{% endfor %}
+</table>
+
+<h2>■ RECENT POSTS</h2>
+<table class="list" cellspacing="0" cellpadding="4" border="1">
+<tr>
+<th>日付</th>
+<th>タイトル</th>
+</tr>
+{% for p in collections.posts | take(10) %}
+<tr>
+<td>{{ p.date | ymd }}</td>
+<td><a href="{{ p.url }}">{{ p.data.title }}</a></td>
+</tr>
+{% else %}
+<tr><td colspan="2">(まだ投稿なし)</td></tr>
+{% endfor %}
+</table>
+

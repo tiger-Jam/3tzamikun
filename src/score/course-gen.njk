@@ -1,0 +1,37 @@
+---
+layout: layout.njk
+pagination:
+  data: charts.coursePages
+  size: 1
+  alias: cp
+permalink: "/score/{{ cp.tableId }}/courses/{{ cp.genSlug }}/"
+eleventyComputed:
+  title: "{{ cp.tableLabel }} 段位 - {{ cp.genLabel }}"
+---
+
+{% set activeTable = cp.tableId %}
+{% set activeLevel = '__courses__' %}
+{% set activeGen = cp.genSlug %}
+
+<h2>■ {{ cp.tableLabel }} 段位コース - {{ cp.genLabel }}</h2>
+
+{% include "score-filter.njk" %}
+
+<p>
+{{ cp.genLabel }} 世代: <b>{{ cp.count }}</b> コース。<br>
+曲名クリックで譜面ページへ。「JSON ↓」でコース定義をダウンロード。
+</p>
+
+<div class="scroll-x">
+<table class="list courses" cellspacing="0" cellpadding="4" border="1">
+<tr>
+<th>コース名</th>
+<th>曲数</th>
+<th>収録曲</th>
+<th>DL</th>
+</tr>
+{% for c in cp.courses %}
+{% include "course-row.njk" %}
+{% endfor %}
+</table>
+</div>

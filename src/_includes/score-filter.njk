@@ -1,0 +1,57 @@
+{# Textage風フィルタ。引数: activeTable, activeLevel, activeGen #}
+<div class="score-filter">
+<div class="filter-row vn">
+<div class="row-label">VERSION</div>
+<div class="row-cells">
+{% for tid in charts.primary %}
+{% set t = charts.tables[tid] %}
+<a class="cell cell-ver{% if tid == activeTable %} active{% endif %}" href="/score/{{ tid }}/">{{ t.short }} <small>{{ t.symbol }}</small></a>
+{% endfor %}
+<a class="cell cell-ver{% if activeTable == 'others' %} active{% endif %}" href="/score/others/">others</a>
+</div>
+</div>
+
+{% if activeTable and activeTable != 'others' and charts.tables[activeTable] %}
+{% set t = charts.tables[activeTable] %}
+
+<div class="filter-row vh">
+<div class="row-label">LEVEL</div>
+<div class="row-cells">
+<a class="cell cell-lv{% if not activeLevel %} active{% endif %}" href="/score/{{ activeTable }}/">ALL</a>
+{% for lv in t.levels %}
+<a class="cell cell-lv{% if lv == activeLevel %} active{% endif %}" href="/score/{{ activeTable }}/lv{{ lv | levelSlug }}/">{{ t.symbol }}{{ lv }}</a>
+{% endfor %}
+{# LEVEL行に段位リンクは置かない（段位認定行が常に出る前提） #}
+</div>
+</div>
+
+{% if t.courseInfo and t.courseInfo.totalCount > 0 %}
+<div class="filter-row vd">
+<div class="row-label">段位認定</div>
+<div class="row-cells">
+<a class="cell cell-dan{% if activeLevel == '__courses__' and not activeGen %} active{% endif %}" href="/score/{{ activeTable }}/courses/">ALL</a>
+{% for grp in t.courseInfo.groups %}
+<a class="cell cell-dan{% if activeGen == grp.slug %} active{% endif %}" href="/score/{{ activeTable }}/courses/{{ grp.slug }}/">{{ grp.label }} <small>({{ grp.count }})</small></a>
+{% endfor %}
+</div>
+</div>
+{% endif %}
+
+{% endif %}
+
+{% if activeTable == 'others' %}
+<div class="filter-row vh">
+<div class="row-label">OTHERS</div>
+<div class="row-cells">
+{% if charts.others.length == 0 %}
+<span class="cell muted-cell">(まだ登録されている表はありません)</span>
+{% else %}
+{% for tid in charts.others %}
+{% set t = charts.tables[tid] %}
+<a class="cell cell-lv" href="/score/{{ tid }}/">{{ t.short }} {{ t.symbol }}</a>
+{% endfor %}
+{% endif %}
+</div>
+</div>
+{% endif %}
+</div>

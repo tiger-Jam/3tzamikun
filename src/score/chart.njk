@@ -1,0 +1,82 @@
+---
+layout: layout.njk
+pagination:
+  data: charts.all
+  size: 1
+  alias: e
+permalink: "/score/{{ e.table }}/c/{{ e.key }}/"
+eleventyComputed:
+  title: "{{ e.title }} ({{ e.tableSymbol }}{{ e.level }}) - {{ e.tableLabel }}"
+---
+
+{% set activeTable = e.table %}
+{% set activeLevel = e.level %}
+{% set activeGen = null %}
+
+<h2>■ {{ e.title }}</h2>
+
+{% include "score-filter.njk" %}
+
+<div class="scroll-x">
+<table class="list" cellspacing="0" cellpadding="4" border="1">
+<tr><th>難易度表</th><td><a href="/score/{{ e.table }}/">{{ e.tableLabel }}</a> ({{ e.tableSymbol }}{{ e.level }})</td></tr>
+<tr><th>タイトル</th><td>{{ e.title }}</td></tr>
+<tr><th>アーティスト</th><td>{{ e.artist }}</td></tr>
+{% if e.genre %}<tr><th>ジャンル</th><td>{{ e.genre }}</td></tr>{% endif %}
+{% if e.bpm %}<tr><th>BPM</th><td>{{ e.bpm }}</td></tr>{% endif %}
+{% if e.notes %}<tr><th>ノーツ</th><td>{{ e.notes }}</td></tr>{% endif %}
+{% if e.durationSec %}<tr><th>時間</th><td>{{ (e.durationSec / 60) | int }}:{% if e.durationSec % 60 < 10 %}0{% endif %}{{ e.durationSec % 60 }}</td></tr>{% endif %}
+{% if e.comment %}<tr><th>コメント</th><td>{{ e.comment }}</td></tr>{% endif %}
+{% if e.nameDiff %}<tr><th>差分名</th><td>{{ e.nameDiff }}</td></tr>{% endif %}
+<tr><th>本体DL</th><td>{% if e.url %}<a href="{{ e.url }}" target="_blank" rel="noopener noreferrer">{{ e.url }}</a>{% else %}-{% endif %}</td></tr>
+{% if e.urlDiff %}<tr><th>差分DL</th><td><a href="{{ e.urlDiff }}" target="_blank" rel="noopener noreferrer">{{ e.urlDiff }}</a></td></tr>{% endif %}
+{% if e.videoUrl %}<tr><th>動画</th><td><a href="{{ e.videoUrl }}" target="_blank" rel="noopener noreferrer">{{ e.videoUrl }}</a></td></tr>{% endif %}
+</table>
+</div>
+
+<h2>■ 譜面</h2>
+
+{% if e.registered %}
+<p>表示する譜面を選択：</p>
+<ul>
+<li><a href="?s=1p">1P 通常</a></li>
+<li><a href="?s=2p">2P 通常</a></li>
+<li><a href="?s=1pm">1P MIRROR</a></li>
+<li><a href="?s=2pm">2P MIRROR</a></li>
+</ul>
+
+<div class="chart-svg-frame">
+<img src="/assets/score/{{ e.key }}/1p.svg" alt="{{ e.title }} 1P譜面" loading="lazy">
+</div>
+{% else %}
+<p class="muted">この譜面はまだ <b>未登録</b>。</p>
+{% endif %}
+
+{% if e.groupId and charts.byGroup[e.groupId] %}
+{% set diffs = charts.byGroup[e.groupId] | excludeKey(e.key) %}
+{% set diffsSource = "group" %}
+{% else %}
+{% set diffs = (charts.byBaseTitle[e.baseTitle] or []) | excludeKey(e.key) %}
+{% set diffsSource = "title" %}
+{% endif %}
+{% if diffs.length > 0 %}
+
+<h2>■ 差分譜面 ({{ diffs.length }}){% if diffsSource == "title" %} <small>※同名検索</small>{% endif %}</h2>
+
+<div class="scroll-x">
+<table class="list" cellspacing="0" cellpadding="4" border="1">
+<tr>
+<th>難易度</th>
+<th>タイトル</th>
+<th>アーティスト</th>
+</tr>
+{% for d in diffs %}
+<tr class="{% if not d.registered %}unreg{% endif %}">
+<td align="center">{{ d.tableSymbol }}{{ d.level }}</td>
+<td><a href="/score/{{ d.table }}/c/{{ d.key }}/">{{ d.title }}</a></td>
+<td>{{ d.artist }}</td>
+</tr>
+{% endfor %}
+</table>
+</div>
+{% endif %}

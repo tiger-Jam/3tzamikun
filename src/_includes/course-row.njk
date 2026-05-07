@@ -1,0 +1,20 @@
+{# 1コース分の行を出力する部分テンプレ。引数: c (course obj), tableId #}
+<tr>
+<td>{{ c.name }}</td>
+<td align="right">{{ (c.md5 or []).length }}</td>
+<td>
+{% set md5list = c.md5 or [] %}
+{% for m in md5list %}
+{% set chart = charts.byMd5[m] %}
+{% if chart %}
+<a href="/score/{{ chart.table }}/c/{{ chart.key }}/" title="{{ chart.tableSymbol }}{{ chart.level }} - {{ chart.artist }}">{{ chart.title }}</a>
+{% else %}
+<span class="muted" title="md5: {{ m }}">未登録 ({{ m | truncate(8, true, "") }})</span>
+{% endif %}
+{% if not loop.last %}<br>{% endif %}
+{% endfor %}
+</td>
+<td align="center">
+<a download="{{ c.name | safeFileName }}.json" href="{{ c | jsonDataUrl }}" title="このコース定義のJSONをダウンロード">JSON ↓</a>
+</td>
+</tr>

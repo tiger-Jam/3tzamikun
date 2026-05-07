@@ -1,0 +1,25 @@
+---
+layout: layout.njk
+title: TOOLS
+---
+
+<h2>■ TOOLS</h2>
+
+<p>自作ツール一覧。</p>
+
+<table class="list" cellspacing="0" cellpadding="4" border="1">
+<tr>
+<th>名称</th>
+<th>状態</th>
+<th>更新</th>
+</tr>
+{% for t in collections.tools %}
+<tr>
+<td><a href="{{ t.data.link or t.url }}">{{ t.data.title }}</a></td>
+<td>{{ t.data.status or "-" }}</td>
+<td>{{ t.date | ymd }}</td>
+</tr>
+{% else %}
+<tr><td colspan="3">(準備中)</td></tr>
+{% endfor %}
+</table>

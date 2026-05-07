@@ -1,0 +1,28 @@
+---
+layout: layout.njk
+title: OTHERS
+permalink: /score/others/
+---
+
+{% set activeTable = 'others' %}
+{% set activeLevel = null %}
+
+<h2>■ OTHERS - その他の難易度表</h2>
+
+{% include "score-filter.njk" %}
+
+{% if charts.others.length == 0 %}
+<p>準備中。</p>
+{% else %}
+<table class="list" cellspacing="0" cellpadding="4" border="1">
+<tr><th>表</th><th>記号</th><th>譜面数</th></tr>
+{% for tid in charts.others %}
+{% set t = charts.tables[tid] %}
+<tr>
+<td><a href="/score/{{ tid }}/">{{ t.label }}</a></td>
+<td>{{ t.symbol }}</td>
+<td align="right">{{ charts.byTable[tid].length }}</td>
+</tr>
+{% endfor %}
+</table>
+{% endif %}

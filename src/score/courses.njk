@@ -1,0 +1,52 @@
+---
+layout: layout.njk
+pagination:
+  data: charts.tables
+  size: 1
+  alias: tableEntry
+  resolve: values
+permalink: "/score/{{ tableEntry.id }}/courses/"
+eleventyComputed:
+  title: "{{ tableEntry.label }} 段位"
+---
+
+{% set activeTable = tableEntry.id %}
+{% set activeLevel = '__courses__' %}
+{% set activeGen = null %}
+
+<h2>■ {{ tableEntry.label }} 段位コース (ALL)</h2>
+
+{% include "score-filter.njk" %}
+
+{% if tableEntry.courseInfo.totalCount == 0 %}
+<p>段位コースはありません。</p>
+{% else %}
+
+<p>
+合計 <b>{{ tableEntry.courseInfo.totalCount }}</b> コース。1コース = 4曲（連続プレイ）構成が標準。<br>
+曲名クリックで譜面ページへ。「JSON ↓」でコース定義をダウンロード。
+{% if tableEntry.courseInfo.groups.length > 1 %}
+本表は <b>{{ tableEntry.courseInfo.groups.length }}</b> 世代に分かれている → 段位認定行から世代別表示。
+{% endif %}
+</p>
+
+{% for grp in tableEntry.courseInfo.groups %}
+{% if tableEntry.courseInfo.groups.length > 1 %}
+<h3 id="{{ grp.slug }}">{{ grp.label }} ({{ grp.count }}コース)</h3>
+{% endif %}
+<div class="scroll-x">
+<table class="list courses" cellspacing="0" cellpadding="4" border="1">
+<tr>
+<th>コース名</th>
+<th>曲数</th>
+<th>収録曲</th>
+<th>DL</th>
+</tr>
+{% for c in grp.courses %}
+{% include "course-row.njk" %}
+{% endfor %}
+</table>
+</div>
+{% endfor %}
+
+{% endif %}

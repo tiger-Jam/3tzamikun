@@ -1,0 +1,20 @@
+{
+  "cd24fd54b865c744428da2513643dd8d": {
+    "title": "水晶世界 ～Fracture～ [yumether]",
+    "artist": "秋山 澪 / obj:夢瑠",
+    "genre": "hard nrg",
+    "bpm": 180,
+    "notes": 2596,
+    "durationSec": 115,
+    "groupId": "fracture"
+  },
+  "2fd8017c4f246d924e75634a89cc3357": {
+    "title": "TexBMS Test Chart",
+    "artist": "TexBMS",
+    "genre": "TEST",
+    "bpm": 130,
+    "notes": 166,
+    "durationSec": 36,
+    "groupId": "samples"
+  }
+}

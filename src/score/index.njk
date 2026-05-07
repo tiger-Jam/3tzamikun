@@ -1,0 +1,43 @@
+---
+layout: layout.njk
+title: SCORE
+---
+
+<h2>■ BMS譜面集</h2>
+
+{% include "score-filter.njk" %}
+
+<table class="list" cellspacing="0" cellpadding="4" border="1">
+<tr>
+<th>表</th>
+<th>記号</th>
+<th>レベル範囲</th>
+<th>譜面数</th>
+<th>段位</th>
+<th>登録済</th>
+</tr>
+{% for tid in charts.primary %}
+{% set t = charts.tables[tid] %}
+<tr>
+<td><a href="/score/{{ tid }}/">{{ t.label }}</a></td>
+<td>{{ t.symbol }}</td>
+<td>{{ t.symbol }}{{ t.levels[0] }} 〜 {{ t.symbol }}{{ t.levels[t.levels.length - 1] }}</td>
+<td align="right">{{ charts.byTable[tid].length }}</td>
+<td align="right">{{ t.courses.length }}</td>
+<td align="right">{{ charts.byTable[tid] | countWhere("registered") }}</td>
+</tr>
+{% endfor %}
+{% if charts.others.length > 0 %}
+{% for tid in charts.others %}
+{% set t = charts.tables[tid] %}
+<tr>
+<td><a href="/score/{{ tid }}/">{{ t.label }}</a> <small>(others)</small></td>
+<td>{{ t.symbol }}</td>
+<td>{{ t.symbol }}{{ t.levels[0] }} 〜 {{ t.symbol }}{{ t.levels[t.levels.length - 1] }}</td>
+<td align="right">{{ charts.byTable[tid].length }}</td>
+<td align="right">{{ t.courses.length }}</td>
+<td align="right">{{ charts.byTable[tid] | countWhere("registered") }}</td>
+</tr>
+{% endfor %}
+{% endif %}
+</table>
