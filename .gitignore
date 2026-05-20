@@ -4,3 +4,5 @@ _site/
 # TexBMS の中間生成物
 tools/texbms/dist/
 tools/texbms/out/
+# 譜面SVG資産 (gitには重すぎ。マシン間はrsync/Tailscale経由で同期)
+src/assets/score/
