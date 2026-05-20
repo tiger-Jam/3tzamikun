@@ -29,6 +29,9 @@ interface CliOptions {
   output?: string;
   pxPerBeat?: number;
   measuresPerColumn?: number;
+  laneKeyWidth?: number;
+  laneScratchWidth?: number;
+  columnGap?: number;
   showFreeZone?: boolean;
   subdivisions?: number;
   side?: 1 | 2;
@@ -57,6 +60,9 @@ function parseArgs(argv: string[]): CliOptions {
     if (a === '-o' || a === '--output') opts.output = args[++i];
     else if (a === '--px-per-beat') opts.pxPerBeat = Number(args[++i]);
     else if (a === '--measures' || a === '--measures-per-column') opts.measuresPerColumn = Number(args[++i]);
+    else if (a === '--lane-key-width') opts.laneKeyWidth = Number(args[++i]);
+    else if (a === '--lane-scratch-width') opts.laneScratchWidth = Number(args[++i]);
+    else if (a === '--column-gap') opts.columnGap = Number(args[++i]);
     else if (a === '--subdivisions' || a === '--sub') opts.subdivisions = Number(args[++i]);
     else if (a === '--side') {
       const s = Number(args[++i]);
@@ -151,6 +157,9 @@ function commonRenderOptions(cli: CliOptions): RenderOptions {
   const r: RenderOptions = {};
   if (cli.pxPerBeat) r.pxPerBeat = cli.pxPerBeat;
   if (cli.measuresPerColumn) r.measuresPerColumn = cli.measuresPerColumn;
+  if (cli.laneKeyWidth) r.laneKeyWidth = cli.laneKeyWidth;
+  if (cli.laneScratchWidth) r.laneScratchWidth = cli.laneScratchWidth;
+  if (cli.columnGap) r.columnGap = cli.columnGap;
   if (cli.showFreeZone) r.showFreeZone = true;
   if (cli.subdivisions) r.subdivisions = cli.subdivisions;
   return r;
