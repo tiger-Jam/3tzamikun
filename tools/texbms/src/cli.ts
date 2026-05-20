@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync, statSync, copyFileSync, type Dirent } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync, statSync, copyFileSync, openSync, readSync, closeSync, type Dirent } from 'node:fs';
 import { dirname, basename, extname, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
@@ -215,10 +215,32 @@ interface RegistryEntry {
 }
 
 /**
- * site-dir/src/_data/tables/*.json を全部読んで md5 集合にする。
- * 「difficulty tables に登録されている譜面」を抽出するための whitelist。
+ * タイトル末尾の括弧書きを再帰的に剥がして lower-case 化。
+ * 表のタイトル "Foo (★5) [ANOTHER]" と BMSファイルの #TITLE "Foo" を揃えるため。
  */
-function readWantedMd5sFromSite(siteDir: string): Set<string> {
+function normalizeTitle(s: string | undefined | null): string {
+  if (!s) return '';
+  const stripRe = /\s*[\[\(（【［][^\]\)）】］]*[\]\)）】］]\s*$/;
+  let t = s.trim();
+  let prev: string;
+  do {
+    prev = t;
+    t = t.replace(stripRe, '').trim();
+  } while (t !== prev);
+  return t.toLowerCase();
+}
+
+export interface WantedFromSite {
+  md5s: Set<string>;
+  /** 正規化タイトル集合。BMS の #TITLE をハッシュ計算前に絞り込むのに使う */
+  titles: Set<string>;
+}
+
+/**
+ * site-dir/src/_data/tables/*.json から md5 集合と正規化タイトル集合を作る。
+ * titles はライブラリ走査時の「ハッシュすべきかの判定」に使う whitelist。
+ */
+function readWantedFromSite(siteDir: string): WantedFromSite {
   const tablesDir = join(siteDir, 'src/_data/tables');
   let names: string[];
   try {
@@ -226,34 +248,73 @@ function readWantedMd5sFromSite(siteDir: string): Set<string> {
   } catch (e) {
     throw new Error(`tables not found: ${tablesDir} (${e})`);
   }
-  const wanted = new Set<string>();
+  const md5s = new Set<string>();
+  const titles = new Set<string>();
   for (const name of names) {
     const j = JSON.parse(readFileSync(join(tablesDir, name), 'utf8'));
     const data: unknown = j?.data;
     if (!Array.isArray(data)) continue;
     for (const e of data as Array<Record<string, unknown>>) {
       const md5 = typeof e.md5 === 'string' ? (e.md5 as string).toLowerCase() : '';
-      if (md5) wanted.add(md5);
+      if (md5) md5s.add(md5);
+      const title = typeof e.title === 'string' ? (e.title as string) : '';
+      const normT = normalizeTitle(title);
+      if (normT) titles.add(normT);
     }
   }
-  return wanted;
+  return { md5s, titles };
 }
 
 interface IndexEntry {
   mtimeMs: number;
   size: number;
-  md5: string;
+  /** BMSヘッダから抽出した #TITLE (生文字列)。先頭16KBから取れた場合のみ */
+  title?: string;
+  /** ファイル全体のmd5。title が wanted に該当した場合のみ計算済 */
+  md5?: string;
 }
 type LibraryIndex = Record<string, IndexEntry>;
 
+/** ファイル先頭 N バイトだけ読む。BMS本体は数百KBあるので全読みより速い */
+function readFirstBytes(path: string, n: number): Buffer | null {
+  let fd: number;
+  try {
+    fd = openSync(path, 'r');
+  } catch {
+    return null;
+  }
+  try {
+    const buf = Buffer.alloc(n);
+    const read = readSync(fd, buf, 0, n, 0);
+    return buf.subarray(0, read);
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/** 先頭16KBから #TITLE を抽出 (encoding.ts 経由) */
+function peekTitle(path: string): string | null {
+  const buf = readFirstBytes(path, 16384);
+  if (!buf) return null;
+  try {
+    const decoded = decodeBmsBuffer(buf);
+    const m = decoded.text.match(/^\s*#TITLE\s+(.+)$/im);
+    return m ? m[1].trim() : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * BMSライブラリ全ファイルの md5 を計算してインデックス。
- * mtimeMs + size が一致する場合は前回のmd5を再利用する（再ハッシュ回避）。
+ * BMSライブラリをインデックス化。`wantedTitles` を渡すと「先頭ヘッダで #TITLE 抽出 → 表のタイトルに該当するファイルだけハッシュ」モードになる。
+ * これで 100k規模のライブラリでも実際にハッシュするのは数千件で済む。
+ * mtimeMs+size が同じファイルは前回結果を再利用 (title/md5 とも)。
  */
 function buildLibraryIndex(
   root: string,
   indexPath: string,
-): { md5ToPath: Map<string, string>; index: LibraryIndex; built: number; reused: number } {
+  wantedTitles?: Set<string>,
+): { md5ToPath: Map<string, string>; matched: number; hashed: number; titleRead: number; titleReused: number } {
   let prev: LibraryIndex = {};
   if (existsSync(indexPath)) {
     try {
@@ -266,11 +327,17 @@ function buildLibraryIndex(
   const files = listBmsFilesRecursive(root);
   const next: LibraryIndex = {};
   const md5ToPath = new Map<string, string>();
-  let built = 0;
-  let reused = 0;
+  let titleRead = 0;
+  let titleReused = 0;
+  let hashed = 0;
+  let hashReused = 0;
+  let matched = 0;
 
-  console.error(`[index] scanning ${files.length} BMS files in ${root}`);
+  const mode = wantedTitles ? 'smart' : 'full';
+  console.error(`[index] scanning ${files.length} BMS files in ${root} (mode=${mode})`);
   const reportEvery = Math.max(1, Math.floor(files.length / 20));
+  let lastFlush = Date.now();
+  const FLUSH_MS = 30_000;
 
   for (let i = 0; i < files.length; i++) {
     const f = files[i];
@@ -281,26 +348,66 @@ function buildLibraryIndex(
       continue;
     }
     const cached = prev[f];
-    let md5: string;
-    if (cached && cached.mtimeMs === st.mtimeMs && cached.size === st.size && cached.md5) {
-      md5 = cached.md5;
-      reused++;
+    const cacheValid =
+      cached && cached.mtimeMs === st.mtimeMs && cached.size === st.size;
+
+    // タイトル取得 (キャッシュor先頭読み)
+    let title: string | undefined;
+    if (cacheValid && cached.title != null) {
+      title = cached.title;
+      titleReused++;
     } else {
-      try {
-        const buf = readFileSync(f);
-        md5 = createHash('md5').update(new Uint8Array(buf)).digest('hex');
-        built++;
-      } catch (e) {
-        console.error(`[index:fail] ${f}: ${e}`);
-        continue;
-      }
+      const t = peekTitle(f);
+      if (t != null) title = t;
+      titleRead++;
     }
-    next[f] = { mtimeMs: st.mtimeMs, size: st.size, md5 };
-    // 同じmd5で複数パスがあれば最初のものを採用
-    if (!md5ToPath.has(md5)) md5ToPath.set(md5, f);
+
+    let md5: string | undefined;
+    let needsHash: boolean;
+    if (wantedTitles) {
+      // smart: title が whitelist に当たればハッシュ、外れたらskip
+      needsHash = title != null && wantedTitles.has(normalizeTitle(title));
+      // title読めなかった場合は念のためハッシュ(取りこぼし防止)
+      if (title == null) needsHash = true;
+    } else {
+      // full: 全件ハッシュ
+      needsHash = true;
+    }
+
+    if (needsHash) {
+      if (cacheValid && cached.md5) {
+        md5 = cached.md5;
+        hashReused++;
+      } else {
+        try {
+          const buf = readFileSync(f);
+          md5 = createHash('md5').update(new Uint8Array(buf)).digest('hex');
+          hashed++;
+        } catch (e) {
+          console.error(`[index:fail] ${f}: ${e}`);
+          continue;
+        }
+      }
+      matched++;
+      if (!md5ToPath.has(md5)) md5ToPath.set(md5, f);
+    }
+
+    next[f] = { mtimeMs: st.mtimeMs, size: st.size, title, md5 };
 
     if ((i + 1) % reportEvery === 0) {
-      console.error(`[index] ${i + 1}/${files.length} (built=${built} reused=${reused})`);
+      console.error(
+        `[index] ${i + 1}/${files.length}  titleRead=${titleRead} titleCache=${titleReused}  hashed=${hashed} hashCache=${hashReused}  matched=${matched}`,
+      );
+    }
+    // 30秒ごとに途中保存(長丁場のクラッシュ耐性)
+    if (Date.now() - lastFlush > FLUSH_MS) {
+      try {
+        mkdirSync(dirname(indexPath), { recursive: true });
+        writeFileSync(indexPath, JSON.stringify(next) + '\n');
+        lastFlush = Date.now();
+      } catch {
+        /* keep going */
+      }
     }
   }
 
@@ -312,8 +419,10 @@ function buildLibraryIndex(
     console.error(`[index:warn] failed to write ${indexPath}: ${e}`);
   }
 
-  console.error(`[index] done. unique=${md5ToPath.size} built=${built} reused=${reused}`);
-  return { md5ToPath, index: next, built, reused };
+  console.error(
+    `[index] done. matched=${matched}  hashed=${hashed} hashCache=${hashReused}  titleRead=${titleRead} titleCache=${titleReused}`,
+  );
+  return { md5ToPath, matched, hashed, titleRead, titleReused };
 }
 
 /**
@@ -474,16 +583,18 @@ async function batchMain(cli: CliOptions) {
       );
       process.exit(2);
     }
-    const wanted = readWantedMd5sFromSite(siteDir);
-    console.error(`[missing-only] wanted=${wanted.size} (from tables in ${siteDir}/src/_data/tables)`);
+    const wanted = readWantedFromSite(siteDir);
+    console.error(
+      `[missing-only] wanted=${wanted.md5s.size} md5s / ${wanted.titles.size} titles (from tables in ${siteDir}/src/_data/tables)`,
+    );
 
     const indexPath = resolve(cli.libraryIndex ?? join(folder, '.texbms-index.json'));
-    const { md5ToPath } = buildLibraryIndex(folder, indexPath);
+    const { md5ToPath } = buildLibraryIndex(folder, indexPath, wanted.titles);
 
     targets = [];
     let notInLibrary = 0;
     let alreadyRegistered = 0;
-    for (const md5 of wanted) {
+    for (const md5 of wanted.md5s) {
       if (!cli.force && registry[md5]) {
         alreadyRegistered++;
         continue;
