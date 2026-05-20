@@ -26,6 +26,10 @@ export interface RenderOptions {
   showFreeZone?: boolean;
   /** 1ピクセル未満の細かなノートをまとめて見やすくする最小高さ */
   minNoteHeight?: number;
+  /** ノーツ高さ = pxPerBeat × この比率 (0.12 で 1拍の12%が音符の太さ。Textage的) */
+  noteHeightRatio?: number;
+  /** 小節番号テキストのフォントサイズ */
+  measureLabelSize?: number;
   /** 列の上下に追加する余白（小節番号の余裕） */
   columnPadding?: number;
   /** 1拍を何分割まで罫線で見せるか。4=4分(拍のみ) / 8=8分 / 16=16分 / 24=三連符 / 32=32分 */
@@ -39,7 +43,7 @@ const DEFAULTS: Required<RenderOptions> = {
   measuresPerColumn: 4,
   laneKeyWidth: 20,
   laneScratchWidth: 30,
-  columnGap: 36,
+  columnGap: 60,
   marginLeft: 24,
   marginRight: 24,
   marginTop: 16,
@@ -48,6 +52,8 @@ const DEFAULTS: Required<RenderOptions> = {
   background: '#0e1018',
   showFreeZone: false,
   minNoteHeight: 3,
+  noteHeightRatio: 0.12,
+  measureLabelSize: 28,
   columnPadding: 10,
   subdivisions: 16,
   side: 1,
@@ -465,21 +471,25 @@ function renderColumn(
     );
   }
 
-  // 小節番号
+  // 小節番号: 列の右側に大きく白で(Textage 風)
   for (let m = col.startMeasure; m < col.endMeasure; m++) {
     const bar = chart.barLines[m];
     if (!bar) continue;
-    const y = beatToY(bar.beat) - 4;
+    const nextBar = chart.barLines[m + 1];
+    // 小節の縦中央あたりに数字を出す
+    const yBottom = beatToY(bar.beat);
+    const yTop = nextBar ? beatToY(nextBar.beat) : yBottom - opts.pxPerBeat * 4;
+    const yCenter = (yBottom + yTop) / 2 + opts.measureLabelSize * 0.35;
     out.push(
-      `<text x="${fmt(colX - 4)}" y="${fmt(
-        y
-      )}" font-size="10" fill="#8089a8" text-anchor="end" font-family="monospace">${m + 1}</text>`
+      `<text x="${fmt(colX + columnWidth + 8)}" y="${fmt(
+        yCenter
+      )}" font-size="${fmt(opts.measureLabelSize)}" fill="#ffffff" text-anchor="start" font-weight="bold" font-family="'Helvetica Neue',Arial,sans-serif">${m + 1}</text>`
     );
     if (Math.abs(bar.ratio - 1.0) > 1e-6) {
       out.push(
-        `<text x="${fmt(colX - 4)}" y="${fmt(
-          y - 11
-        )}" font-size="9" fill="#caa257" text-anchor="end" font-family="monospace">${fmt(bar.ratio)}x</text>`
+        `<text x="${fmt(colX + columnWidth + 8)}" y="${fmt(
+          yCenter + opts.measureLabelSize * 0.7
+        )}" font-size="${fmt(opts.measureLabelSize * 0.5)}" fill="#caa257" text-anchor="start" font-family="monospace">${fmt(bar.ratio)}x</text>`
       );
     }
   }
@@ -551,7 +561,8 @@ function renderColumn(
         if (note.kind === 'normal') {
           const y = beatToY(note.beat);
           const style = laneStyle(note.lane);
-          const noteH = note.lane.type === 'scratch' ? 5 : 4;
+          const baseH = Math.max(opts.minNoteHeight, opts.pxPerBeat * opts.noteHeightRatio);
+          const noteH = note.lane.type === 'scratch' ? baseH * 1.2 : baseH;
           out.push(
             `<rect x="${fmt(x)}" y="${fmt(y - noteH)}" width="${fmt(w)}" height="${fmt(
               noteH
