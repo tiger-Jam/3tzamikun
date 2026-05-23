@@ -318,6 +318,87 @@ table.list tr.unreg:nth-child(even) td { background: #efefef; }
 	text-decoration: underline;
 }
 
+/* ----- Textage 風譜面ビュアー ----- */
+body.bare {
+	background: #000000;
+	margin: 0;
+	min-height: 100vh;  /* viewport いっぱいに黒背景延ばす */
+	font-family: 'MS PGothic','ＭＳ Ｐゴシック','Hiragino Sans',sans-serif;
+	color: #ffffff;
+}
+html { background: #000000; }  /* html も黒に揃えて overscroll 時も色変わらない */
+.textage-page { /* container */ }
+.t-header {
+	padding: 4px 8px;
+	font-size: 14px;
+	color: #ffffff;
+	background: #000000;
+}
+.t-header .t-back {
+	color: #ffffff;
+	text-decoration: underline;
+	margin-right: 6px;
+}
+.t-header .t-title { color: #ffffff; font-weight: bold; }
+.t-header .t-diff { color: #ff9000; font-weight: bold; margin: 0 8px 0 0; }
+.t-header .t-artist { color: #ffffff; margin-right: 8px; font-weight: bold; }
+.t-header .t-bpm { color: #ffffff; }
+.t-header .t-level { color: #ffffff; font-weight: bold; }
+.t-header .t-notes { color: #ffffff; }
+.chart-scroll {
+	background: #000000;
+}
+.chart-scroll img {
+	display: block;
+	/* viewport 高さ (header + score+button 分を引いた残り) にフィット。
+	   横幅は比率自動。長譜面は body 横スクロール */
+	height: calc(100vh - 120px);
+	width: auto;
+	max-width: none;
+}
+.t-bottom {
+	padding: 4px 0;
+	background: #000000;
+	color: #ffffff;
+	font-size: 12px;
+	white-space: nowrap;
+	overflow-x: auto;
+}
+.t-bottom .t-score {
+	color: #ffffff;
+	margin: 0 8px;
+}
+.t-buttons {
+	display: inline;
+}
+.t-btn {
+	font: 12px 'MS PGothic','ＭＳ Ｐゴシック',sans-serif;
+	background: #d4d0c8;
+	border: 1px solid #888888;
+	border-top-color: #ffffff;
+	border-left-color: #ffffff;
+	cursor: pointer;
+	margin: 0 1px;
+	padding: 0 4px;
+	color: #000000;
+	vertical-align: middle;
+}
+.t-btn u { text-decoration: underline; }
+.t-btn:hover:not(.t-disabled) { background: #ffffcc; }
+.t-btn.active {
+	background: #ffff80;
+	border-top-color: #888888;
+	border-left-color: #888888;
+	border-right-color: #ffffff;
+	border-bottom-color: #ffffff;
+	font-weight: bold;
+}
+.t-btn.t-disabled {
+	color: #888888;
+	background: #aaa7a0;
+	cursor: default;
+}
+
 /* ----- responsive: collapse to single column ----- */
 @media (max-width: 920px) {
 	table.frame { width: auto; margin: 4px; }

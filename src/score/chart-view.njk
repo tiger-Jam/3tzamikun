@@ -1,0 +1,100 @@
+---
+layout: layout-bare.njk
+pagination:
+  data: charts.all
+  size: 1
+  alias: e
+permalink: "/score/{{ e.table }}/c/{{ e.key }}/svg/"
+eleventyComputed:
+  title: "{{ e.title }} ({{ e.tableSymbol }}{{ e.level }}) - 譜面"
+---
+
+{% if e.registered %}
+{% set maxScore = e.notes * 2 %}
+{% set maxMinus = ((maxScore * 17) / 18) | int %}
+{% set aaaScore = ((maxScore * 8) / 9) | int %}
+
+<div class="textage-page">
+
+<div class="t-header">
+<a href="/score/{{ e.table }}/c/{{ e.key }}/" class="t-back">&gt;</a>
+"<span class="t-genre">{{ e.genre or e.tableLabel }}</span>"<span class="t-diff">[SP ANOTHER]</span>
+<span class="t-title">{{ e.title }}</span>
+/ <span class="t-artist">{{ e.artist }}</span>
+{% if e.bpm %}bpm:<span class="t-bpm">{{ e.bpm }}</span> - {% endif %}
+<span class="t-level">{{ e.tableSymbol }}{{ e.level }}</span>
+{% if e.notes %} Notes:<span class="t-notes">{{ e.notes }}</span>{% endif %}
+</div>
+
+<div class="chart-scroll">
+<img id="chart-svg" src="/assets/score/{{ e.key }}/1p.svg?v={{ site.buildId }}" alt="{{ e.title }} 譜面" loading="lazy">
+</div>
+
+<div class="t-bottom">
+<span class="t-score">MAX:{{ maxScore }}, MAX-:{{ maxMinus }}, AAA:{{ aaaScore }} (SCR=?? BSS=??)</span>
+<span class="t-buttons">
+<button type="button" class="t-btn active" data-v="1p" accesskey="d">[<u>D</u>]efault</button>
+<button type="button" class="t-btn t-disabled">[<u>H</u>]i-Speed</button>
+<button type="button" class="t-btn" data-v="1pm" accesskey="m">[<u>M</u>]IRROR</button>
+<button type="button" class="t-btn t-disabled">R-RAN [W,&lt;]</button>
+<button type="button" class="t-btn t-disabled">R-RAN [E,&gt;]</button>
+<button type="button" class="t-btn t-disabled">[<u>R</u>]ANDOM</button>
+<button type="button" class="t-btn t-disabled">[<u>A</u>]UTO-RAN</button>
+<button type="button" class="t-btn t-disabled">[<u>S</u>]-RAN</button>
+<button type="button" class="t-btn" data-v="2p" accesskey="f">[<u>F</u>]LIP</button>
+<button type="button" class="t-btn t-disabled">[<u>B</u>]arClip</button>
+<button type="button" class="t-btn t-disabled">[<u>K</u>]eyInfo</button>
+<button type="button" class="t-btn t-disabled">[<u>N</u>]otesIndex</button>
+<button type="button" class="t-btn t-disabled">[<u>X</u>]ChordCount</button>
+<button type="button" class="t-btn t-disabled">[<u>G</u>]raph</button>
+<button type="button" class="t-btn t-disabled">[<u>T</u>]weet</button>
+</span>
+</div>
+
+</div>
+
+<script>
+(function(){
+	var img = document.getElementById('chart-svg');
+	var opts = document.querySelectorAll('.t-btn[data-v]');
+	var base = '/assets/score/{{ e.key }}/';
+	// FLIP と MIRROR の toggle 状態管理
+	var state = { flip: false, mirror: false };
+	function variant(){
+		var v = (state.flip ? '2' : '1') + 'p' + (state.mirror ? 'm' : '');
+		return v;
+	}
+	function apply(){
+		var v = variant();
+		img.src = base + v + '.svg?v=' + Date.now();
+		for (var i = 0; i < opts.length; i++) {
+			var b = opts[i];
+			var bv = b.dataset.v;
+			var active = (bv === '1p' && !state.flip && !state.mirror)
+				|| (bv === '1pm' && state.mirror)
+				|| (bv === '2p' && state.flip);
+			b.classList.toggle('active', active);
+		}
+		history.replaceState(null, '', '#' + v);
+	}
+	for (var i = 0; i < opts.length; i++) {
+		(function(b){
+			b.addEventListener('click', function(){
+				var bv = b.dataset.v;
+				if (bv === '1p') { state.flip = false; state.mirror = false; }
+				else if (bv === '1pm') { state.mirror = !state.mirror; }
+				else if (bv === '2p') { state.flip = !state.flip; }
+				apply();
+			});
+		})(opts[i]);
+	}
+	var h = location.hash.slice(1);
+	if (h === '1pm') { state.mirror = true; }
+	else if (h === '2p') { state.flip = true; }
+	else if (h === '2pm') { state.flip = true; state.mirror = true; }
+	apply();
+})();
+</script>
+{% else %}
+<p class="muted">この譜面はまだ <b>未登録</b>。</p>
+{% endif %}

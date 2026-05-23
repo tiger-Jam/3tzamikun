@@ -32,29 +32,35 @@ export interface RenderOptions {
   measureLabelSize?: number;
   /** 列の上下に追加する余白（小節番号の余裕） */
   columnPadding?: number;
+  /** 4小節ブロック同士の横の隙間 (column gap = ラベルパネル幅 と別) */
+  blockGap?: number;
   /** 1拍を何分割まで罫線で見せるか。4=4分(拍のみ) / 8=8分 / 16=16分 / 24=三連符 / 32=32分 */
   subdivisions?: number;
   /** SP表示の向き。1=1P側(SC左), 2=2P側(SC右)。DPでは無視 */
   side?: 1 | 2;
 }
 
+// Textage 譜面のピクセル計測ベース
+// 1列幅 = 270px (lane area 215 + label panel 55)
+// 1拍 = 68px (4小節 × 4拍 × 68 ≈ 1088px の列高さ。これでビューポート1列を縦いっぱい)
 const DEFAULTS: Required<RenderOptions> = {
-  pxPerBeat: 56,
+  pxPerBeat: 55,
   measuresPerColumn: 4,
-  laneKeyWidth: 20,
-  laneScratchWidth: 30,
-  columnGap: 60,
-  marginLeft: 24,
-  marginRight: 24,
-  marginTop: 16,
-  marginBottom: 24,
-  headerHeight: 96,
-  background: '#0e1018',
+  laneKeyWidth: 22,
+  laneScratchWidth: 60,
+  columnGap: 55,
+  marginLeft: 32,
+  marginRight: 32,
+  marginTop: 0,
+  marginBottom: 0,
+  headerHeight: 0,
+  background: '#000000',
   showFreeZone: false,
   minNoteHeight: 3,
-  noteHeightRatio: 0.12,
+  noteHeightRatio: 0.105,
   measureLabelSize: 28,
-  columnPadding: 10,
+  columnPadding: 8,
+  blockGap: 12,
   subdivisions: 16,
   side: 1,
 };
@@ -213,15 +219,21 @@ export function renderChartSvg(chart: Chart, options: RenderOptions = {}): strin
     });
   }
 
-  // 列の最大高さで揃える
-  const maxColumnHeight = Math.max(...columns.map((c) => c.height), opts.pxPerBeat * 4);
-  const columnHeight = maxColumnHeight + opts.columnPadding * 2;
+  // 列高さは譜面によらず固定 (Textage風: 1列=4小節を2段(各2小節)に分けて表示)。
+  // 拍子変化を含む特殊小節があっても全部一定にして見た目を揃える。
+  const noteHCap = Math.max(opts.minNoteHeight, opts.pxPerBeat * opts.noteHeightRatio) * 1.3;
+  const effectivePadding = Math.max(opts.columnPadding, noteHCap);
+  const measuresPerHalf = Math.ceil(opts.measuresPerColumn / 2);
+  const halfContentHeight = measuresPerHalf * 4 * opts.pxPerBeat;
+  const halfSeparator = 0; // halfSep=0 → 単一の白線で区切る
+  const fixedColumnContentHeight = halfContentHeight * 2 + halfSeparator;
+  const columnHeight = fixedColumnContentHeight + effectivePadding * 2;
 
   const totalWidth =
     opts.marginLeft +
     opts.marginRight +
-    totalColumns * columnWidth +
-    Math.max(0, totalColumns - 1) * opts.columnGap;
+    totalColumns * (columnWidth + opts.columnGap) +
+    Math.max(0, totalColumns - 1) * opts.blockGap;
   const totalHeight = opts.marginTop + opts.headerHeight + columnHeight + opts.marginBottom;
 
   const out: string[] = [];
@@ -242,13 +254,13 @@ export function renderChartSvg(chart: Chart, options: RenderOptions = {}): strin
   );
 
   // ヘッダ（メタ情報）
-  out.push(renderHeader(chart, totalWidth, opts));
+  if (opts.headerHeight > 0) out.push(renderHeader(chart, totalWidth, opts));
 
   // 各列
   const columnsTop = opts.marginTop + opts.headerHeight;
   for (let i = 0; i < columns.length; i++) {
     const col = columns[i];
-    const colX = opts.marginLeft + i * (columnWidth + opts.columnGap);
+    const colX = opts.marginLeft + i * (columnWidth + opts.columnGap + opts.blockGap);
     out.push(renderColumn(chart, col, colX, columnsTop, columnHeight, slots, columnWidth, opts));
   }
 
@@ -320,47 +332,116 @@ function renderColumn(
 ): string {
   const out: string[] = [];
 
-  // 列のベース。列の **底辺** が startBeat、上端が endBeat に対応（下→上）
-  const colBottom = colTop + columnHeight - opts.columnPadding;
-  const beatToY = (beat: number): number => {
-    const offsetFromColStart = beat - col.startBeat;
-    return colBottom - offsetFromColStart * opts.pxPerBeat;
+  // padding は ノーツ高さで上端のはみ出し防止のため動的に確保
+  const noteHCap = Math.max(opts.minNoteHeight, opts.pxPerBeat * opts.noteHeightRatio) * 1.3;
+  const effectivePadding = Math.max(opts.columnPadding, noteHCap);
+  const uniformMeasureHeight = 4 * opts.pxPerBeat;
+  // Textage 風 2段構成 (上半=最初2小節、下半=後2小節)
+  // 各半内では下→上が時系列順(早い小節が下)。
+  // 列全体の構造 (上から下):
+  //   padding | top-half (mRel=1 top, mRel=0 bottom) | separator | bottom-half (mRel=3 top, mRel=2 bottom) | padding
+  const measuresPerHalfLocal = Math.ceil(opts.measuresPerColumn / 2);
+  const halfContentH = measuresPerHalfLocal * uniformMeasureHeight;
+  const halfSep = 0; // 上下半の境界(0=隙間なし、白線1本で区切る)
+  const topHalfTopY = colTop + effectivePadding;
+  const topHalfBottomY = topHalfTopY + halfContentH;
+  const bottomHalfTopY = topHalfBottomY + halfSep;
+  const bottomHalfBottomY = bottomHalfTopY + halfContentH;
+  const colBottom = bottomHalfBottomY; // 旧 colBottom 互換
+
+  // 小節 m (col.startMeasure 起点) の y 範囲
+  // Textage準拠: 早い小節が下、遅い小節が上(= 全体読みは下→上で時系列順)
+  // bottom half = mRel 0-1 (早い 2小節)、top half = mRel 2-3 (遅い 2小節)
+  const measureRegion = (m: number): { topY: number; bottomY: number } => {
+    const mRel = m - col.startMeasure;
+    const inTopHalf = mRel >= measuresPerHalfLocal;
+    const indexInHalf = inTopHalf ? mRel - measuresPerHalfLocal : mRel;
+    // half 内では index 0 が下、index 1 が上
+    const halfBottomY = inTopHalf ? topHalfBottomY : bottomHalfBottomY;
+    const measureBottomY = halfBottomY - indexInHalf * uniformMeasureHeight;
+    return { bottomY: measureBottomY, topY: measureBottomY - uniformMeasureHeight };
   };
 
-  // 列背景
+  const beatToY = (beat: number): number => {
+    for (let m = col.startMeasure; m < col.endMeasure; m++) {
+      const bs = chart.barLines[m]?.beat ?? 0;
+      const be = chart.barLines[m + 1]?.beat ?? bs + 4;
+      if (beat >= bs - 1e-9 && beat <= be + 1e-9) {
+        const ratio = (beat - bs) / (be - bs);
+        const { bottomY, topY } = measureRegion(m);
+        return bottomY - ratio * (bottomY - topY);
+      }
+    }
+    // 列の上端 (col.endBeat) フォールバック → 最後の小節の上端
+    if (beat >= col.endBeat - 1e-6) {
+      return measureRegion(col.endMeasure - 1).topY;
+    }
+    // 列下端より下は線形外挿
+    return bottomHalfBottomY + (col.startBeat - beat) * opts.pxPerBeat;
+  };
+
+  // 半段ごとの実際の小節数で描画範囲を決定 (部分列の空欄半段を消す)
+  // bottom half = 早い小節 (mRel 0-1)、top half = 遅い小節 (mRel 2-3)
+  const measuresInCol = col.endMeasure - col.startMeasure;
+  const measuresInBottomHalf = Math.min(measuresPerHalfLocal, measuresInCol);
+  const measuresInTopHalf = Math.max(0, measuresInCol - measuresPerHalfLocal);
+  const topHalfActualH = measuresInTopHalf * uniformMeasureHeight;
+  const bottomHalfActualH = measuresInBottomHalf * uniformMeasureHeight;
+  // 半段の y範囲(actual): 各小節は半段の **下** から積み上げる(mRel=0 が一番下)
+  const topHalfRenderTopY = topHalfBottomY - topHalfActualH;
+  const bottomHalfRenderTopY = bottomHalfBottomY - bottomHalfActualH;
+
+  // 列背景: 黒一色 (実小節分だけ)
   out.push(`<g class="col col-${col.startMeasure}">`);
-  out.push(
-    `<rect x="${fmt(colX)}" y="${fmt(colTop)}" width="${fmt(columnWidth)}" height="${fmt(
-      columnHeight
-    )}" fill="#13162a"/>`
-  );
-
-  // 各レーンの背景
-  for (const slot of slots) {
-    const isWhite =
-      slot.lane.type === 'key' &&
-      (slot.lane.index === 1 || slot.lane.index === 3 || slot.lane.index === 5 || slot.lane.index === 7);
-    const isBlack =
-      slot.lane.type === 'key' &&
-      (slot.lane.index === 2 || slot.lane.index === 4 || slot.lane.index === 6);
-    let bg = '#0d1023';
-    if (slot.lane.type === 'scratch') bg = '#1a0c10';
-    else if (isWhite) bg = '#0d1023';
-    else if (isBlack) bg = '#0c0f1d';
-
+  if (measuresInTopHalf > 0) {
     out.push(
-      `<rect x="${fmt(colX + slot.x)}" y="${fmt(colTop)}" width="${fmt(slot.width)}" height="${fmt(
-        columnHeight
-      )}" fill="${bg}"/>`
+      `<rect x="${fmt(colX)}" y="${fmt(topHalfRenderTopY)}" width="${fmt(columnWidth)}" height="${fmt(
+        topHalfActualH
+      )}" fill="#000000"/>`
+    );
+  }
+  if (measuresInBottomHalf > 0) {
+    out.push(
+      `<rect x="${fmt(colX)}" y="${fmt(bottomHalfRenderTopY)}" width="${fmt(columnWidth)}" height="${fmt(
+        bottomHalfActualH
+      )}" fill="#000000"/>`
+    );
+  }
+  // 灰色 label panel (実小節分だけ)
+  const labelPanelX = colX + columnWidth;
+  const labelPanelW = opts.columnGap;
+  if (measuresInTopHalf > 0) {
+    out.push(
+      `<rect x="${fmt(labelPanelX)}" y="${fmt(topHalfRenderTopY)}" width="${fmt(labelPanelW)}" height="${fmt(
+        topHalfActualH
+      )}" fill="#7e7e7e"/>`
+    );
+  }
+  if (measuresInBottomHalf > 0) {
+    out.push(
+      `<rect x="${fmt(labelPanelX)}" y="${fmt(bottomHalfRenderTopY)}" width="${fmt(labelPanelW)}" height="${fmt(
+        bottomHalfActualH
+      )}" fill="#7e7e7e"/>`
     );
   }
 
-  // 列の上下シルエット
-  out.push(
-    `<rect x="${fmt(colX)}" y="${fmt(colTop)}" width="${fmt(columnWidth)}" height="${fmt(
-      columnHeight
-    )}" fill="none" stroke="#262a45"/>`
-  );
+  // レーン縦線(各レーン境界に薄いグリッド、実小節分だけ)
+  {
+    let xCursor = colX;
+    for (let s = 0; s < slots.length - 1; s++) {
+      xCursor += slots[s].width;
+      if (measuresInTopHalf > 0) {
+        out.push(
+          `<line x1="${fmt(xCursor)}" y1="${fmt(topHalfRenderTopY)}" x2="${fmt(xCursor)}" y2="${fmt(topHalfBottomY)}" stroke="#505050" stroke-width="0.4"/>`
+        );
+      }
+      if (measuresInBottomHalf > 0) {
+        out.push(
+          `<line x1="${fmt(xCursor)}" y1="${fmt(bottomHalfRenderTopY)}" x2="${fmt(xCursor)}" y2="${fmt(bottomHalfBottomY)}" stroke="#505050" stroke-width="0.4"/>`
+        );
+      }
+    }
+  }
 
   // 細分線（小節内の罫線）。subdivisions に応じて複数粒度を重ね描き
   // 描画優先度（強い→弱い）: 拍 > 8分 > 12分(三連) > 16分 > 24分(三連x16) > 32分
@@ -368,29 +449,26 @@ function renderColumn(
   // 罫線の階層は「subdivisions の値で決まる単一の系列」にする。
   // 三連符(12,24)は2系列のため、16分系列とは混ぜない（混ざると不均一に見える）
   const subdivLevels: Array<{ div: number; stroke: string; width: number }> = [];
-  subdivLevels.push({ div: 4, stroke: '#6a7396', width: 1.2 });
+  subdivLevels.push({ div: 4, stroke: '#808080', width: 0.6 });  // 拍線
   const s = opts.subdivisions;
   if (s === 8) {
-    subdivLevels.push({ div: 8, stroke: '#4a5072', width: 0.9 });
+    subdivLevels.push({ div: 8, stroke: '#404040', width: 0.4 });
   } else if (s === 12) {
-    // 三連符モード: 8分は出さず、12分(三連)を出す
-    subdivLevels.push({ div: 12, stroke: '#7a4a5e', width: 0.85 });
+    subdivLevels.push({ div: 12, stroke: '#5a3030', width: 0.4 });
   } else if (s === 16) {
-    subdivLevels.push({ div: 8, stroke: '#4a5072', width: 0.9 });
-    subdivLevels.push({ div: 16, stroke: '#363b58', width: 0.7 });
+    subdivLevels.push({ div: 8, stroke: '#606060', width: 0.5 });
+    subdivLevels.push({ div: 16, stroke: '#505050', width: 0.45 });
   } else if (s === 24) {
-    // 三連符 + 24分
-    subdivLevels.push({ div: 12, stroke: '#7a4a5e', width: 0.85 });
-    subdivLevels.push({ div: 24, stroke: '#5a3845', width: 0.6 });
+    subdivLevels.push({ div: 12, stroke: '#5a3030', width: 0.4 });
+    subdivLevels.push({ div: 24, stroke: '#3a2020', width: 0.3 });
   } else if (s === 32) {
-    subdivLevels.push({ div: 8, stroke: '#4a5072', width: 0.9 });
-    subdivLevels.push({ div: 16, stroke: '#363b58', width: 0.7 });
-    subdivLevels.push({ div: 32, stroke: '#272b42', width: 0.55 });
+    subdivLevels.push({ div: 8, stroke: '#505050', width: 0.5 });
+    subdivLevels.push({ div: 16, stroke: '#303030', width: 0.35 });
+    subdivLevels.push({ div: 32, stroke: '#202020', width: 0.25 });
   } else if (s === 48) {
-    // 16分 + 三連の混合
-    subdivLevels.push({ div: 8, stroke: '#4a5072', width: 0.9 });
-    subdivLevels.push({ div: 12, stroke: '#7a4a5e', width: 0.7 });
-    subdivLevels.push({ div: 16, stroke: '#363b58', width: 0.6 });
+    subdivLevels.push({ div: 8, stroke: '#505050', width: 0.5 });
+    subdivLevels.push({ div: 12, stroke: '#5a3030', width: 0.4 });
+    subdivLevels.push({ div: 16, stroke: '#303030', width: 0.3 });
   }
 
   for (let m = col.startMeasure; m < col.endMeasure; m++) {
@@ -431,14 +509,28 @@ function renderColumn(
     if (!bar) continue;
     if (bar.beat < col.startBeat - 1e-6 || bar.beat > col.endBeat + 1e-6) continue;
     const y = beatToY(bar.beat);
+    // 白い小節境界線は label panel まで伸ばす(統一感)
     out.push(
-      `<line x1="${fmt(colX)}" y1="${fmt(y)}" x2="${fmt(colX + columnWidth)}" y2="${fmt(
+      `<line x1="${fmt(colX)}" y1="${fmt(y)}" x2="${fmt(colX + columnWidth + opts.columnGap)}" y2="${fmt(
         y
-      )}" stroke="#5e6488" stroke-width="1.4"/>`
+      )}" stroke="#ffffff" stroke-width="1"/>`
     );
   }
 
-  // BPM変化のライン（緑）
+  // ブロック白枠 (top-half, bottom-half それぞれ実小節分だけ)
+  const blockRightX = colX + columnWidth + opts.columnGap;
+  if (measuresInTopHalf > 0) {
+    out.push(
+      `<rect x="${fmt(colX)}" y="${fmt(topHalfRenderTopY)}" width="${fmt(blockRightX - colX)}" height="${fmt(topHalfActualH)}" fill="none" stroke="#ffffff" stroke-width="1"/>`
+    );
+  }
+  if (measuresInBottomHalf > 0) {
+    out.push(
+      `<rect x="${fmt(colX)}" y="${fmt(bottomHalfRenderTopY)}" width="${fmt(blockRightX - colX)}" height="${fmt(bottomHalfActualH)}" fill="none" stroke="#ffffff" stroke-width="1"/>`
+    );
+  }
+
+  // BPM変化のライン (チャートエリア部分のみ、ここで先に薄く描画 → label panel 上は最後に再描画)
   for (const ev of chart.bpmEvents) {
     if (ev.beat < col.startBeat - 1e-6 || ev.beat >= col.endBeat - 1e-6) continue;
     if (ev.beat === 0 && col.startMeasure !== 0) continue;
@@ -447,11 +539,6 @@ function renderColumn(
       `<line x1="${fmt(colX)}" y1="${fmt(y)}" x2="${fmt(colX + columnWidth)}" y2="${fmt(
         y
       )}" stroke="#7cfc00" stroke-width="1" stroke-dasharray="3 2" opacity="0.85"/>`
-    );
-    out.push(
-      `<text x="${fmt(colX + 2)}" y="${fmt(y - 2)}" font-size="9" fill="#7cfc00" opacity="0.95">${fmt(
-        ev.bpm
-      )}</text>`
     );
   }
 
@@ -471,25 +558,21 @@ function renderColumn(
     );
   }
 
-  // 小節番号: 列の右側に大きく白で(Textage 風)
+  // ラベルテキスト(panel rect は背景と一緒に既に描画済、ここでは text のみ)
   for (let m = col.startMeasure; m < col.endMeasure; m++) {
-    const bar = chart.barLines[m];
-    if (!bar) continue;
-    const nextBar = chart.barLines[m + 1];
-    // 小節の縦中央あたりに数字を出す
-    const yBottom = beatToY(bar.beat);
-    const yTop = nextBar ? beatToY(nextBar.beat) : yBottom - opts.pxPerBeat * 4;
-    const yCenter = (yBottom + yTop) / 2 + opts.measureLabelSize * 0.35;
+    const { topY: measureTopY, bottomY: measureBottomY } = measureRegion(m);
+    const yCenter = (measureTopY + measureBottomY) / 2 + opts.measureLabelSize * 0.35;
     out.push(
-      `<text x="${fmt(colX + columnWidth + 8)}" y="${fmt(
+      `<text x="${fmt(labelPanelX + labelPanelW / 2)}" y="${fmt(
         yCenter
-      )}" font-size="${fmt(opts.measureLabelSize)}" fill="#ffffff" text-anchor="start" font-weight="bold" font-family="'Helvetica Neue',Arial,sans-serif">${m + 1}</text>`
+      )}" font-size="${fmt(opts.measureLabelSize)}" fill="#ffffff" text-anchor="middle" font-weight="bold" font-family="'Helvetica Neue',Arial,sans-serif">${m + 1}</text>`
     );
-    if (Math.abs(bar.ratio - 1.0) > 1e-6) {
+    const bar = chart.barLines[m];
+    if (bar && Math.abs(bar.ratio - 1.0) > 1e-6) {
       out.push(
-        `<text x="${fmt(colX + columnWidth + 8)}" y="${fmt(
+        `<text x="${fmt(labelPanelX + labelPanelW / 2)}" y="${fmt(
           yCenter + opts.measureLabelSize * 0.7
-        )}" font-size="${fmt(opts.measureLabelSize * 0.5)}" fill="#caa257" text-anchor="start" font-family="monospace">${fmt(bar.ratio)}x</text>`
+        )}" font-size="${fmt(opts.measureLabelSize * 0.5)}" fill="#7a3030" text-anchor="middle" font-family="monospace">${fmt(bar.ratio)}x</text>`
       );
     }
   }
@@ -500,15 +583,15 @@ function renderColumn(
   for (const kind of order) {
     for (const note of chart.notes) {
       if (note.kind !== kind) continue;
-      if (note.beat < col.startBeat - 1e-6) {
-        // long が列をまたぐ場合に限り描画する
-        if (note.kind === 'long' && note.endBeat !== undefined && note.endBeat > col.startBeat) {
-          // OK
-        } else {
-          continue;
-        }
+      if (note.kind === 'long') {
+        // LN: 区間 [note.beat, note.endBeat] が列の [startBeat, endBeat] と重なる時のみ描画
+        if (note.beat >= col.endBeat - 1e-6) continue;        // LN が現列より右(=後)で始まる
+        if (note.endBeat !== undefined && note.endBeat <= col.startBeat + 1e-6) continue; // LN が現列より左(=前)で終わる
+      } else {
+        // 通常/mine: note.beat が列範囲内のときだけ
+        if (note.beat < col.startBeat - 1e-6) continue;
+        if (note.beat >= col.endBeat - 1e-6) continue;
       }
-      if (note.beat >= col.endBeat - 1e-6 && note.kind !== 'long') continue;
 
       const targetSlots = laneSlots(slots, note.lane);
       if (targetSlots.length === 0) continue;
@@ -527,32 +610,37 @@ function renderColumn(
         }
 
         if (note.kind === 'long' && note.endBeat !== undefined) {
+          // yStart = LN 上端y(時系列で言うとendBeat側)、yEnd = LN 下端y(beat側)
           const yStart = beatToY(Math.min(col.endBeat, note.endBeat));
           const yEnd = beatToY(Math.max(col.startBeat, note.beat));
-          const top = Math.min(yStart, yEnd);
-          const bottom = Math.max(yStart, yEnd);
-          const h = Math.max(opts.minNoteHeight, bottom - top);
           const style = laneStyle(note.lane);
-          out.push(
-            `<rect x="${fmt(x)}" y="${fmt(top)}" width="${fmt(w)}" height="${fmt(
-              h
-            )}" fill="${style.long}" stroke="${style.longStroke}" stroke-width="0.6" rx="1"/>`
-          );
-          out.push(
-            `<rect x="${fmt(x)}" y="${fmt(top)}" width="${fmt(w)}" height="${fmt(
-              h
-            )}" fill="url(#lnGradient)" opacity="0.6"/>`
-          );
-          if (note.beat >= col.startBeat - 1e-6) {
-            const yHead = beatToY(note.beat);
+          const baseH = Math.max(opts.minNoteHeight, opts.pxPerBeat * opts.noteHeightRatio);
+          const noteH = note.lane.type === 'scratch' ? baseH * 1.2 : baseH;
+          const headInCol = note.beat >= col.startBeat - 1e-6;
+          const tailInCol = note.endBeat <= col.endBeat + 1e-6;
+          // body は少し狭め(65%幅)で head/tail の間を埋める
+          const bodyW = w * 0.65;
+          const bodyX = x + (w - bodyW) / 2;
+          const bodyTopY = yStart;
+          const bodyBottomY = headInCol ? yEnd - noteH : yEnd;
+          const bodyH = bodyBottomY - bodyTopY;
+          if (bodyH > 0.5) {
             out.push(
-              `<rect x="${fmt(x)}" y="${fmt(yHead - 3)}" width="${fmt(w)}" height="3" fill="${style.fill}" stroke="${style.stroke}" stroke-width="0.6"/>`
+              `<rect x="${fmt(bodyX)}" y="${fmt(bodyTopY)}" width="${fmt(bodyW)}" height="${fmt(
+                bodyH
+              )}" fill="${style.long}" stroke="${style.longStroke}" stroke-width="0.6"/>`
             );
           }
-          if (note.endBeat <= col.endBeat + 1e-6) {
-            const yTail = beatToY(note.endBeat);
+          // head (LN開始 = 通常ノーツと同じ表示)
+          if (headInCol) {
             out.push(
-              `<rect x="${fmt(x)}" y="${fmt(yTail - 3)}" width="${fmt(w)}" height="3" fill="${style.fill}" stroke="${style.stroke}" stroke-width="0.6"/>`
+              `<rect x="${fmt(x)}" y="${fmt(yEnd - noteH)}" width="${fmt(w)}" height="${fmt(noteH)}" fill="${style.fill}" stroke="${style.stroke}" stroke-width="0.6" rx="0.8"/>`
+            );
+          }
+          // tail (LN終端 = 通常ノーツと同じ表示)
+          if (tailInCol) {
+            out.push(
+              `<rect x="${fmt(x)}" y="${fmt(yStart - noteH)}" width="${fmt(w)}" height="${fmt(noteH)}" fill="${style.fill}" stroke="${style.stroke}" stroke-width="0.6" rx="0.8"/>`
             );
           }
           continue;
@@ -573,16 +661,31 @@ function renderColumn(
     }
   }
 
+  // BPM 変化の緑線とテキスト (label panel 上、最後に描画して z-order 最前面)
+  for (const ev of chart.bpmEvents) {
+    if (ev.beat < col.startBeat - 1e-6 || ev.beat >= col.endBeat - 1e-6) continue;
+    if (ev.beat === 0 && col.startMeasure !== 0) continue;
+    const y = beatToY(ev.beat);
+    // 緑線を label panel 部分にも伸ばす(全幅)
+    out.push(
+      `<line x1="${fmt(colX)}" y1="${fmt(y)}" x2="${fmt(colX + columnWidth + opts.columnGap)}" y2="${fmt(
+        y
+      )}" stroke="#7cfc00" stroke-width="1.2" stroke-dasharray="3 2"/>`
+    );
+    // BPM 数字 (panel 中央)
+    out.push(
+      `<text x="${fmt(labelPanelX + labelPanelW / 2)}" y="${fmt(y - 3)}" font-size="13" font-weight="bold" fill="#7cfc00" text-anchor="middle" font-family="'Helvetica Neue',Arial,sans-serif" stroke="#000000" stroke-width="2" paint-order="stroke">${fmt(ev.bpm)}</text>`
+    );
+  }
+
   out.push(`</g>`);
   return out.join('\n');
 }
 
 function renderMine(x: number, y: number, w: number): string {
-  const cx = x + w / 2;
-  const r = Math.min(w / 2, 5);
-  return `<g><circle cx="${fmt(cx)}" cy="${fmt(y - r)}" r="${fmt(
-    r
-  )}" fill="url(#mineHatch)" stroke="#cfcfcf" stroke-width="0.6"/><text x="${fmt(cx)}" y="${fmt(
-    y - r + 3
-  )}" font-size="8" fill="#fff" text-anchor="middle" font-weight="700">!</text></g>`;
+  // ノーツと同じ幅の横長ハッチ柄バー(地雷=避けるべきノーツとして目立たせる)
+  const h = 6;
+  return `<g><rect x="${fmt(x)}" y="${fmt(y - h)}" width="${fmt(w)}" height="${fmt(
+    h
+  )}" fill="url(#mineHatch)" stroke="#ff5555" stroke-width="0.8"/></g>`;
 }

@@ -4,4 +4,5 @@ export default {
 	author: "ミツアミくん",
 	email: "3tzami@gmail.com",
 	since: 2026,
+	buildId: Date.now(),
 };
